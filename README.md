@@ -35,4 +35,4 @@
         apt-get install libudev-dev libc6
     2. Install espflash itself
         ```
-        cargo install cargo-espflash
+        cargo install cargo-espflash --locked
