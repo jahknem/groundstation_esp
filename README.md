@@ -7,7 +7,7 @@
     ```
     cargo install espup
     cargo install cargo-generate
-    cargo install cargo-espflash
+    cargo install cargo-espflash --locked
     cargo install espflash
 
 3. Install necessary toolchains: 
