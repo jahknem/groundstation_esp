@@ -6,6 +6,10 @@
 2. Install espup (https://docs.esp-rs.org/book/installation/riscv-and-xtensa.html)
     ```
     cargo install espup
+    cargo install cargo-generate
+    cargo install cargo-espflash
+    cargo install espflash
+
 3. Install necessary toolchains: 
     ```
     espup install -v 1.74.0.1
