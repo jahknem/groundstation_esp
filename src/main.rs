@@ -6,9 +6,7 @@ use esp_idf_hal::units::*;
 use std::sync::{Mutex, Arc};
 use std::thread;
 use std::time::Duration;
-use accel_stepper::Driver;
-
-
+use accel_stepper::{Driver, OperatingSystemClock};
 
 // mod hall_sensor;
 // use hall_sensor::HallSensor;
@@ -20,10 +18,9 @@ pub fn calculate_degrees(adc_min: u16, adc_max: u16, adc_value: u16, adc_referen
 }
 
 fn main() {
-    let cal_degree_low = 0;
-    let cal_degree_high = 359;
-    let cal_value_low = 0;
-    let cal_value_high = 4095;
+    let adc_min = 0;
+    let adc_max = 4095;
+    let adc_reference = 1000;
     use esp_idf_hal::adc::attenuation::DB_11;
     // It is necessary to call this function once. Otherwise some patches to the runtime
     // implemented by esp-idf-sys might not link properly. See https://github.com/esp-rs/esp-idf-template/issues/71
@@ -45,18 +42,29 @@ fn main() {
     };
 
 
-    let mut adc_elevation_pin = AdcChannelDriver::new(&adc, peripherals.pins.gpio34, &config).unwrap();
-    let mut adc_azimuth_pin = AdcChannelDriver::new(&adc, peripherals.pins.gpio35, &config).unwrap();
+    let mut adc_elevation = AdcChannelDriver::new(&adc, peripherals.pins.gpio34, &config).unwrap();
+    let mut adc_azimuth = AdcChannelDriver::new(&adc, peripherals.pins.gpio35, &config).unwrap();
 
-    let servo_timer = peripherals.ledc.timer1;
-    let servo_driver = LedcTimerDriver::new(servo_timer, &TimerConfig::new().frequency(50.Hz()).resolution(esp_idf_hal::ledc::Resolution::Bits14)).unwrap();
-    //let servo = Arc::new(Mutex::new(LedcDriver::new(peripherals.ledc.channel3, servo_driver, pin)));
+    let mut axis = Driver::new();
+    axis.set_max_speed(500.0);
+    axis.set_acceleration(100.0);
 
+    let mut forward = 0;
+    let mut back = 0;
+
+    let mut dev = accel_stepper::func_device(|| forward += 1, || back += 1);
+
+    axis.move_to(17);
+
+    let clock = OperatingSystemClock::new();
+    while axis.is_running() {
+        axis.poll(&mut dev, &clock).unwrap();
+    }
     // Main loop to access the sensor degrees periodically
     loop {
         // Get the current sensor reading
         thread::sleep(Duration::from_millis(100));
-        // log::info!("Azimuth {}", hall_sensor_azimuth.read_degrees());
-        // log::info!("Elevation {}", hall_sensor_elevation.read_degrees());
+        log::info!("Azimuth {}", calculate_degrees(adc_min, adc_max, adc_azimuth.read().unwrap(), adc_reference));
+        log::info!("Elevation {}", calculate_degrees(adc_min, adc_max, adc_elevation.read().unwrap(), adc_reference));
     }
 }
