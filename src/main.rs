@@ -8,14 +8,10 @@ use std::thread;
 use std::time::Duration;
 use accel_stepper::{Driver, OperatingSystemClock};
 
-// mod hall_sensor;
-// use hall_sensor::HallSensor;
+mod hall_sensor;
+use hall_sensor::calculate_degrees;
 
-pub fn calculate_degrees(adc_min: u16, adc_max: u16, adc_value: u16, adc_reference: u16) -> f32 {
-    let adc_span = adc_max - adc_min;
-    let adc_cleaned_var = (adc_value - adc_reference + adc_span) % adc_span;
-    adc_cleaned_var as f32 /(adc_span -1) as f32 *360 as f32
-}
+
 
 fn main() {
     let adc_min = 0;
