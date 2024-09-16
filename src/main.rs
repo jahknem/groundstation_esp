@@ -1,18 +1,24 @@
 use esp_idf_sys::{self as _};
-use esp_idf_hal::{gpio, ledc::{config::TimerConfig, LedcDriver, LedcTimerDriver}, peripherals::Peripherals};
+use esp_idf_hal::{gpio, peripherals::Peripherals};
 use esp_idf_hal::adc::oneshot::config::AdcChannelConfig;
 use esp_idf_hal::adc::oneshot::*;
 use esp_idf_hal::prelude::*;
-use esp_idf_hal::units::*;
 use esp_idf_hal::uart;
 use std::sync::{Mutex, Arc};
 use std::thread;
 use std::time::Duration;
 use accel_stepper::{Driver, OperatingSystemClock};
-use log::LevelFilter;
 
 mod hall_sensor;
 use hall_sensor::calculate_degrees;
+
+mod motor;
+mod motor_controller;
+
+use crate::motor_controller::MotorController;
+
+
+const GEAR_RATIO: f64 = 1.0 / 5.0;
 
 fn parse_message(buffer: &[u8]) -> Option<(Vec<u8>, usize)> {
     // Define your protocol's start and end bytes
@@ -80,7 +86,7 @@ fn main() {
 
     let config = uart::config::Config::default().baudrate(Hertz(115_200));
 
-    let mut uart_driver: uart::UartDriver = uart::UartDriver::new(
+    let uart_driver: uart::UartDriver = uart::UartDriver::new(
         peripherals.uart2,
         peripherals.pins.gpio17,
         peripherals.pins.gpio16,
@@ -140,22 +146,37 @@ fn main() {
     let mut adc_elevation = AdcChannelDriver::new(&adc, peripherals.pins.gpio34, &config).unwrap();
     let mut adc_azimuth = AdcChannelDriver::new(&adc, peripherals.pins.gpio35, &config).unwrap();
 
-    // // Stepper Stuff
-    // let mut axis = Driver::new();
-    // axis.set_max_speed(500.0);
-    // axis.set_acceleration(100.0);
+    // Stepper Stuff
 
-    // let mut forward = 0;
-    // let mut back = 0;
+    let azimuth_motor_pin = peripherals.pins.gpio32.into();
+    let azimuth_direction_pin = peripherals.pins.gpio33.into();
+    let elevation_motor_pin = peripherals.pins.gpio25.into();
+    let elevation_direction_pin = peripherals.pins.gpio26.into();
 
-    // let mut dev = accel_stepper::func_device(|| forward += 1, || back += 1);
+    let mut motor_controller = MotorController::new(
+        azimuth_motor_pin,
+        azimuth_direction_pin,
+        Some(GEAR_RATIO),
+        elevation_motor_pin,
+        elevation_direction_pin,
+        Some(GEAR_RATIO),
+    ).unwrap();
 
-    // axis.move_to(17);
+    let mut axis = Driver::new();
+    axis.set_max_speed(500.0);
+    axis.set_acceleration(100.0);
 
-    // let clock = OperatingSystemClock::new();
-    // while axis.is_running() {
-    //     axis.poll(&mut dev, &clock).unwrap();
-    // }
+    let mut forward = 0;
+    let mut back = 0;
+
+    let mut dev = accel_stepper::func_device(|| forward += 1, || back += 1);
+
+    axis.move_to(17);
+
+    let clock = OperatingSystemClock::new();
+    while axis.is_running() {
+        axis.poll(&mut dev, &clock).unwrap();
+    }
     loop {
         // Get the current sensor reading
         thread::sleep(Duration::from_millis(15000));
