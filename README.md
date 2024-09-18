@@ -294,8 +294,8 @@ Each message follows the structure:
 | **MESSAGE_ID**  | 1            | Unique random identifier for the message (0-255)  |
 | **COMMAND_ID**  | 1            | Identifier for the command                        |
 | **PAYLOAD_LEN** | 1            | Length of the payload in bytes                    |
-| **PAYLOAD**     | Variable     | Command-specific data         |
-| **CHECKSUM**    | 1            | XOR of bytes from COMMAND_ID to last PAYLOAD byte |
+| **PAYLOAD**     | Variable     | Command-specific data                             |
+| **CHECKSUM**    | 1            | XOR of bytes from MESSAGE_ID to last PAYLOAD byte |
 | **END_BYTE**    | 1            | End of message indicator (`0x03`)                 |
 
 
@@ -310,7 +310,7 @@ Each message follows the structure:
   | **MESSAGE_ID**  | 1            | `MESSAGE_ID` of the message being acknowledged plus 1 |
   | **COMMAND_ID**  | 1            | `0x06` (ACK Command ID)                             |
   | **PAYLOAD_LEN** | 1            | `0x01`                                              |
-  | **PAYLOAD**     | 1            | `COMMAND_ID` of the message being acknowledged      |
+  | **PAYLOAD**     | 1            |                                                     |
   | **CHECKSUM**    | 1            | XOR of COMMAND_ID, PAYLOAD_LEN, and PAYLOAD         |
   | **END_BYTE**    | 1            | `0x03`                                              |
 
@@ -354,10 +354,6 @@ The checksum is calculated as the XOR of all bytes from `MESSAGE_ID` to the last
 - **Delta Azimuth/Elevation**: 16-bit signed integers (Big-endian)
 - **Speed**: 16-bit unsigned integer (Big-endian)
 - **Mode**: 8-bit unsigned integer
-
-### Checksum Calculation
-
-The checksum is calculated as the XOR of all bytes from COMMAND_ID to the last byte of the PAYLOAD (if any). The START_BYTE and END_BYTE are excluded from the checksum calculation.
 
 ### Functions and Message Handling
 
@@ -440,7 +436,7 @@ Each command triggers specific functions to execute the desired operation.
   - `Mode`: 1 byte (unsigned 8-bit integer)
 - **Function**: `set_mode(mode: u8)`
 - **Description**:
-  - Sets the operation mode of the system (e.g., armed, off).
+  - Sets the operation mode of the system (e.g., armed, disarmed).
 - **Response**:
   - Acknowledgment message including current mode.
 

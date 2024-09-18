@@ -1,13 +1,18 @@
 [package]
-name = "test_esp32"
+name = "esp_turret"
 version = "0.1.0"
 authors = ["jan"]
 edition = "2021"
 resolver = "2"
 rust-version = "1.77"
 
+[lib]
+name = "esp_turret"
+path = "src/lib.rs"
+
 [[bin]]
-name = "test_esp32"
+name = "esp_turret"
+path = "src/main.rs"
 harness = false # do not use the built in cargo test harness -> resolve rust-analyzer errors
 
 [profile.release]
@@ -34,6 +39,9 @@ esp-idf-hal = "0.44.1"
 esp-idf-sys = "0.35.0"
 libm = "0.2.8"
 accel-stepper = { version = "0.1.0", features = ["std"] }
+prost = "0.13.2"
+bytes = "1.7.2"
 
 [build-dependencies]
 embuild = "0.32.0"
+prost-build = "0.13.2"

@@ -1,3 +1,7 @@
+use esp_idf_hal::{adc::{self, oneshot::*}, gpio::ADCPin};
+use esp_idf_sys::EspError;
+use std::{borrow::Borrow, thread, time::Duration};
+
 /// Calculates the angular position in degrees based on the ADC value relative to a reference value.
 ///
 /// This function computes the angular difference between `adc_value` and `adc_reference`,
@@ -35,4 +39,27 @@ pub fn calculate_degrees(adc_min: u16, adc_max: u16, adc_value: u16, adc_referen
     let adc_span = adc_max - adc_min + 1;
     let adc_cleaned_var = (adc_value.wrapping_sub(adc_reference).wrapping_add(adc_span)) % adc_span;
     adc_cleaned_var as f32 / (adc_span - 1) as f32 * 360.0
+}
+
+pub async fn read_data<'a, T, M>(
+    adc_channel_driver: &mut AdcChannelDriver<'a, T, M>,
+    adc_min: u16,
+    adc_max: u16,
+    adc_reference: u16,
+    adc_sleep: u64,
+) -> Result<(), EspError>
+where
+    T: ADCPin,
+    M: Borrow<AdcDriver<'a, T::Adc>>,
+{
+    let mut adc_val;
+    loop {
+        adc_val = calculate_degrees(
+            adc_min, 
+            adc_max, 
+            adc_channel_driver.read().unwrap(), 
+            adc_reference
+        );
+        thread::sleep(Duration::from_millis(adc_sleep));
+    }
 }
