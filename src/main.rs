@@ -86,12 +86,29 @@ fn main() {
         Some(GEAR_RATIO),
     ).unwrap();
 
-    motor_controller.turn_from_manual_control(0.0, 0.0);
-    motor_controller.turn_from_manual_control(30.0, 30.0);
 
     loop {
         // Get the current sensor reading
-        thread::sleep(Duration::from_millis(15000));
+        // motor_controller.turn_from_manual_control(0.0, 0.0);
+        // log::info!(
+        //     "Azimuth {}", 
+        //     calculate_degrees(
+        //         adc_min, 
+        //         adc_max, 
+        //         adc_azimuth.read().unwrap(), 
+        //         adc_reference
+        //     )
+        // );
+        // log::info!(
+        //     "Elevation {}", 
+        //     calculate_degrees(
+        //         adc_min, 
+        //         adc_max, 
+        //         adc_elevation.read().unwrap(), 
+        //         adc_reference
+        //     )
+        // );
+        // motor_controller.turn_from_manual_control(30.0, 30.0);
         log::info!(
             "Azimuth {}", 
             calculate_degrees(
@@ -110,5 +127,6 @@ fn main() {
                 adc_reference
             )
         );
+        thread::sleep(Duration::from_millis(1000));
     }
 }
