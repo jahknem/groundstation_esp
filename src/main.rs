@@ -1,5 +1,8 @@
 //main.rs
 
+use esp_idf_hal::gpio::{AnyIOPin, PinDriver};
+use esp_idf_hal::rmt::config::TransmitConfig;
+use esp_idf_hal::rmt::TxRmtDriver;
 use esp_idf_sys::{self as _, EspError};
 use esp_idf_hal::{gpio, peripherals::Peripherals};
 use esp_idf_hal::adc::oneshot::config::AdcChannelConfig;
@@ -7,6 +10,7 @@ use esp_idf_hal::adc::{self, oneshot::*};
 use esp_idf_hal::prelude::*;
 use esp_idf_hal::task::*;
 use esp_idf_hal::uart::{config, UartDriver, AsyncUartDriver};
+use esp_turret::motor::Motor;
 use std::borrow::BorrowMut;
 use std::thread;
 use std::time::Duration;
@@ -71,62 +75,31 @@ fn main() {
     let mut adc_azimuth = AdcChannelDriver::new(&adc, peripherals.pins.gpio35, &config).unwrap();
 
     // Stepper Stuff
+    let azimuth_motor_pin = peripherals.pins.gpio32; // Motor pulse pin
+    let azimuth_direction_pin = peripherals.pins.gpio33; // Direction control pin
+    let azimuth_direction_pin_any: AnyIOPin = azimuth_direction_pin.into();
+    let azimuth_direction_pin_driver = PinDriver::output(azimuth_direction_pin_any).unwrap();
+    let azimuth_rmt_channel = peripherals.rmt.channel0;
+    let azimuth_rmt_driver = TxRmtDriver::new(azimuth_rmt_channel, azimuth_motor_pin, &TransmitConfig::new()).unwrap();
+    let mut azimuth_motor = Motor::new(azimuth_direction_pin_driver, azimuth_rmt_driver, Some(1.0 / 5.0));
 
-    let azimuth_motor_pin = peripherals.pins.gpio32.into();
-    let azimuth_direction_pin = peripherals.pins.gpio33.into();
-    let elevation_motor_pin = peripherals.pins.gpio25.into();
-    let elevation_direction_pin = peripherals.pins.gpio26.into();
+    let elevation_motor_pin = peripherals.pins.gpio25; // Motor pulse pin
+    let elevation_direction_pin = peripherals.pins.gpio26; // Direction control pin
+    let elevation_direction_pin_any: AnyIOPin = elevation_direction_pin.into();
+    let elevation_direction_pin_driver = PinDriver::output(elevation_direction_pin_any).unwrap();
+    let elevation_rmt_channel = peripherals.rmt.channel1;
+    let elevation_rmt_driver = TxRmtDriver::new(elevation_rmt_channel, elevation_motor_pin, &TransmitConfig::new()).unwrap();
+    let mut elevation_motor = Motor::new(elevation_direction_pin_driver, elevation_rmt_driver, Some(1.0 / 5.0));
+
 
     let mut motor_controller = MotorController::new(
-        azimuth_motor_pin,
-        azimuth_direction_pin,
-        Some(GEAR_RATIO),
-        elevation_motor_pin,
-        elevation_direction_pin,
-        Some(GEAR_RATIO),
-    ).unwrap();
-
-
-    loop {
-        // Get the current sensor reading
-        // motor_controller.turn_from_manual_control(0.0, 0.0);
-        // log::info!(
-        //     "Azimuth {}", 
-        //     calculate_degrees(
-        //         adc_min, 
-        //         adc_max, 
-        //         adc_azimuth.read().unwrap(), 
-        //         adc_reference
-        //     )
-        // );
-        // log::info!(
-        //     "Elevation {}", 
-        //     calculate_degrees(
-        //         adc_min, 
-        //         adc_max, 
-        //         adc_elevation.read().unwrap(), 
-        //         adc_reference
-        //     )
-        // );
-        // motor_controller.turn_from_manual_control(30.0, 30.0);
-        log::info!(
-            "Azimuth {}", 
-            calculate_degrees(
-                adc_min, 
-                adc_max, 
-                adc_azimuth.read().unwrap(), 
-                adc_reference
-            )
-        );
-        log::info!(
-            "Elevation {}", 
-            calculate_degrees(
-                adc_min, 
-                adc_max, 
-                adc_elevation.read().unwrap(), 
-                adc_reference
-            )
-        );
-        thread::sleep(Duration::from_millis(1000));
-    }
+        azimuth_motor,
+        elevation_motor,
+        adc_azimuth,
+        adc_elevation,
+        adc_min,
+        adc_max,
+        adc_reference,
+    )
+    .unwrap();
 }

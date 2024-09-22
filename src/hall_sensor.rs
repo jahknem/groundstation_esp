@@ -1,3 +1,5 @@
+// hall_sensor.rs
+
 use esp_idf_hal::{adc::{self, oneshot::*}, gpio::ADCPin};
 use esp_idf_sys::EspError;
 use std::{borrow::Borrow, thread, time::Duration};

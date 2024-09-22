@@ -1,76 +1,131 @@
 // motor_controller.rs
 
 use crate::motor::Motor;
-use esp_idf_hal::gpio::AnyIOPin;
+use crate::hall_sensor::calculate_degrees;
+use esp_idf_hal::adc::oneshot::{AdcChannelDriver, AdcDriver};
+use esp_idf_hal::gpio::ADCPin;
+use esp_idf_hal::units::FromValueType;
+use esp_idf_sys::EspError;
+use std::borrow::Borrow;
 use std::error::Error;
+use std::thread;
+use std::time::Duration;
 
-const MAX_SECONDS_PER_REVOLUTION: f64 = 10.0; // Adjust based on your hardware
-const MIN_SECONDS_PER_REVOLUTION: f64 = 0.25; // Adjust based on your hardware
-
-pub struct MotorController<'d> {
+pub struct MotorController<'d, A1, A2, M1, M2>
+where
+    A1: ADCPin,
+    A2: ADCPin,
+    M1: Borrow<AdcDriver<'d, A1::Adc>>,
+    M2: Borrow<AdcDriver<'d, A2::Adc>>,
+{
     motor_azimuth: Motor<'d>,
     motor_elevation: Motor<'d>,
+    adc_azimuth: AdcChannelDriver<'d, A1, M1>,
+    adc_elevation: AdcChannelDriver<'d, A2, M2>,
+    adc_min: u16,
+    adc_max: u16,
+    adc_reference: u16,
 }
 
-impl<'d> MotorController<'d> {
+impl<'d, A1, A2, M1, M2> MotorController<'d, A1, A2, M1, M2>
+where
+    A1: ADCPin,
+    A2: ADCPin,
+    M1: Borrow<AdcDriver<'d, A1::Adc>>,
+    M2: Borrow<AdcDriver<'d, A2::Adc>>,
+{
     pub fn new(
-        azimuth_motor_pin: AnyIOPin,
-        azimuth_direction_pin: AnyIOPin,
-        azimuth_gear_ratio: Option<f64>,
-        elevation_motor_pin: AnyIOPin,
-        elevation_direction_pin: AnyIOPin,
-        elevation_gear_ratio: Option<f64>,
+        motor_azimuth: Motor<'d>,
+        motor_elevation: Motor<'d>,
+        adc_azimuth: AdcChannelDriver<'d, A1, M1>,
+        adc_elevation: AdcChannelDriver<'d, A2, M2>,
+        adc_min: u16,
+        adc_max: u16,
+        adc_reference: u16,
     ) -> Result<Self, Box<dyn Error>> {
-        let motor_azimuth = Motor::new(
-            azimuth_motor_pin,
-            azimuth_direction_pin,
-            azimuth_gear_ratio,
-        )?;
-        let motor_elevation = Motor::new(
-            elevation_motor_pin,
-            elevation_direction_pin,
-            elevation_gear_ratio,
-        )?;
-        Ok(MotorController {
+        Ok(Self {
             motor_azimuth,
             motor_elevation,
+            adc_azimuth,
+            adc_elevation,
+            adc_min,
+            adc_max,
+            adc_reference,
         })
     }
 
-    /// Used for steering the tracker manually (e.g., using a controller).
-    pub fn turn_from_manual_control(&mut self, azimuth_input: f64, elevation_input: f64) {
-        let azimuth_speed = calculate_speed_from_manual_control(azimuth_input);
-        let elevation_speed = calculate_speed_from_manual_control(elevation_input);
+    /// Moves the antenna pod to the desired azimuth and elevation angles.
+    pub fn move_to_angles(&mut self, target_azimuth: f32, target_elevation: f32) -> Result<(), Box<dyn Error>> {
+        // Read current positions from hall sensors
+        let current_azimuth = calculate_degrees(
+            self.adc_min,
+            self.adc_max,
+            self.adc_azimuth.read()?,
+            self.adc_reference,
+        );
 
+        let current_elevation = calculate_degrees(
+            self.adc_min,
+            self.adc_max,
+            self.adc_elevation.read()?,
+            self.adc_reference,
+        );
+
+        // Calculate the error considering the gear ratio
+        let azimuth_error = target_azimuth - (current_azimuth * self.motor_azimuth.gear_ratio());
+        let elevation_error = target_elevation - (current_elevation * self.motor_elevation.gear_ratio());
+
+        // Set directions based on error signs
+        self.motor_azimuth.set_direction(azimuth_error > 0.0)?;
+        self.motor_elevation.set_direction(elevation_error > 0.0)?;
+
+        // Calculate speeds (you might want to implement a control algorithm here)
+        let azimuth_speed = self.calculate_speed_from_error(azimuth_error);
+        let elevation_speed = self.calculate_speed_from_error(elevation_error);
+
+        // Start motors with calculated speeds
         if azimuth_speed > 0.0 {
-            let _ = self.motor_azimuth.turn_degrees(
-                if azimuth_input.is_sign_positive() { 1.0 } else { -1.0 },
-                Some(azimuth_speed),
-            );
+            self.motor_azimuth.start(azimuth_speed as u64)?;
+        } else {
+            self.motor_azimuth.stop()?;
         }
 
         if elevation_speed > 0.0 {
-            let _ = self.motor_elevation.turn_degrees(
-                if elevation_input.is_sign_positive() { 1.0 } else { -1.0 },
-                Some(elevation_speed),
-            );
+            self.motor_elevation.start(elevation_speed as u64)?;
+        } else {
+            self.motor_elevation.stop()?;
         }
 
-        println!(
-            "Turned motors manually with speed {:.2} azimuth and {:.2} elevation.",
-            azimuth_speed, elevation_speed
-        );
+        Ok(())
     }
-}
 
-/// Calculates speed based on manual control input.
-fn calculate_speed_from_manual_control(input_value: f64) -> f64 {
-    let input_value = input_value.clamp(-1.0, 1.0).abs();
-    if input_value > 0.1 {
-        let slope: f64 = (MAX_SECONDS_PER_REVOLUTION - MIN_SECONDS_PER_REVOLUTION) / 0.9;
-        let y_intercept: f64 = MIN_SECONDS_PER_REVOLUTION - slope;
-        slope * input_value + y_intercept
-    } else {
-        0.0
+    /// Calculates speed based on the error between current and target positions.
+    fn calculate_speed_from_error(&self, error: f32) -> f32 {
+        let error_abs = error.abs();
+        if error_abs > 1.0 {
+            // Map error to speed (frequency)
+            // For example, error of 1 degree corresponds to 100 Hz, 10 degrees to 1000 Hz
+            // Adjust these values based on your hardware
+            let min_speed = 100.0; // Hz
+            let max_speed = 1000.0; // Hz
+            let speed = min_speed + (max_speed - min_speed) * (error_abs / 10.0).min(1.0);
+            speed
+        } else {
+            0.0
+        }
+    }
+
+    /// Stops both motors.
+    pub fn stop(&mut self) -> Result<(), EspError> {
+        self.motor_azimuth.stop()?;
+        self.motor_elevation.stop()
+    }
+
+    /// Control loop to continuously adjust the antenna position.
+    pub fn control_loop(&mut self, target_azimuth: f32, target_elevation: f32) -> Result<(), Box<dyn Error>> {
+        loop {
+            self.move_to_angles(target_azimuth, target_elevation)?;
+            thread::sleep(Duration::from_millis(100)); // Adjust as needed
+        }
     }
 }
